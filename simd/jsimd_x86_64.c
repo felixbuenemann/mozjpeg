@@ -3,7 +3,7 @@
  *
  * Copyright 2009 Pierre Ossman <ossman@cendio.se> for Cendio AB
  * Copyright 2009-2011, 2014, 2016 D. R. Commander
- * Copyright 2015 Matthieu Darbois
+ * Copyright 2015-2016 Matthieu Darbois
  *
  * Based on the x86 SIMD extension for IJG JPEG library,
  * Copyright (C) 1999-2006, MIYASAKA Masaru.
@@ -20,6 +20,7 @@
 #include "../jsimd.h"
 #include "../jdct.h"
 #include "../jsimddct.h"
+#include "jconfigint.h"
 #include "jsimd.h"
 
 /*
@@ -884,4 +885,26 @@ jsimd_huff_encode_one_block (void *state, JOCTET *buffer, JCOEFPTR block,
 {
   return jsimd_huff_encode_one_block_sse2(state, buffer, block, last_dc_val,
                                           dctbl, actbl);
+}
+
+GLOBAL(int)
+jsimd_can_encode_mcu_AC_refine_prepare (void)
+{
+  if (DCTSIZE != 8)
+    return 0;
+  if (sizeof(JCOEF) != 2)
+    return 0;
+  if (SIZEOF_SIZE_T != 8)
+    return 0;
+  return 1;
+}
+
+GLOBAL(int)
+jsimd_encode_mcu_AC_refine_prepare(const JCOEF *block,
+                                   const int *jpeg_natural_order_ss,
+                                   int Sl, int Al, JCOEF *absvalues,
+                                   size_t *bits)
+{
+  return jsimd_encode_mcu_AC_refine_prepare_sse2(block, jpeg_natural_order_ss,
+                                                 Sl, Al, absvalues, bits);
 }

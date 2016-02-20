@@ -144,6 +144,18 @@ AC_TRY_RUN(
   [AC_MSG_RESULT(yes)],
   [AC_MSG_RESULT(Assuming that right shift is signed on target machine.)])
 
+AC_CHECK_SIZEOF(long)
+
+# Check for builtin_ctz
+if test "${ac_cv_sizeof_size_t}" = "${ac_cv_sizeof_long}"; then
+  AC_MSG_CHECKING([for __builtin_ctzl])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[ int foo(unsigned long a) { return __builtin_ctzl(a); } ]])],
+                 [AC_MSG_RESULT(yes)
+                  AC_DEFINE([HAVE_JCPHUFF_BUILTIN_CTZL], 1,
+                    [Define if your compiler has __builtin_ctzl function.])],
+                 [AC_MSG_RESULT(no)])
+fi
+
 # Checks for library functions.
 AC_CHECK_FUNCS([memset memcpy], [],
   [AC_DEFINE([NEED_BSD_STRINGS], 1,

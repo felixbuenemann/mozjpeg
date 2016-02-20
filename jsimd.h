@@ -91,3 +91,9 @@ EXTERN(int) jsimd_can_huff_encode_one_block (void);
 EXTERN(JOCTET*) jsimd_huff_encode_one_block
         (void *state, JOCTET *buffer, JCOEFPTR block, int last_dc_val,
          c_derived_tbl *dctbl, c_derived_tbl *actbl);
+
+EXTERN(int) jsimd_can_encode_mcu_AC_refine_prepare (void);
+
+EXTERN(int) jsimd_encode_mcu_AC_refine_prepare
+        (const JCOEF *block, const int *jpeg_natural_order_ss, int Sl,
+         int Al, JCOEF *absvalues, size_t *bits);

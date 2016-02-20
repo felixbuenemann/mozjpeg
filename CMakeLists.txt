@@ -183,6 +183,11 @@ endif()
 
 message(STATUS "Install directory = ${CMAKE_INSTALL_PREFIX}")
 
+include(CheckIncludeFiles)
+include(CheckTypeSize)
+check_type_size("size_t" SIZEOF_SIZE_T)
+check_include_files("intrin.h" HAVE_INTRIN_H)
+
 configure_file(win/jconfig.h.in jconfig.h)
 configure_file(win/jconfigint.h.in jconfigint.h)
 

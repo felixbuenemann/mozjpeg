@@ -12,3 +12,6 @@
 
 /* The size of `size_t', as computed by sizeof. */
 #undef SIZEOF_SIZE_T
+
+/* Define if your compiler has __builtin_ctzl function and sizeof(unsigned long) == sizeof(size_t). */
+#undef HAVE_JCPHUFF_BUILTIN_CTZL

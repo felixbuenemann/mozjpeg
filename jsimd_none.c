@@ -402,3 +402,12 @@ jsimd_huff_encode_one_block (void *state, JOCTET *buffer, JCOEFPTR block,
 {
   return NULL;
 }
+
+GLOBAL(int)
+jsimd_encode_mcu_AC_refine_prepare(const JCOEF *block,
+                                   const int *jpeg_natural_order_ss,
+                                   int Sl, int Al, JCOEF *absvalues,
+                                   size_t *bits)
+{
+  return 0;
+}

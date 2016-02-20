@@ -5,6 +5,7 @@
  * Copyright (C) 1995-1997, Thomas G. Lane.
  * libjpeg-turbo Modifications:
  * Copyright (C) 2015, D. R. Commander.
+ * Copyright (C) 2016, Matthieu Darbois.
  * For conditions of distribution and use, see the accompanying README.ijg
  * file.
  *
@@ -18,9 +19,55 @@
 #define JPEG_INTERNALS
 #include "jinclude.h"
 #include "jpeglib.h"
-#include "jchuff.h"             /* Declarations shared with jchuff.c */
+#include "jconfigint.h"
+#include "jsimd.h"
+#include <limits.h>
 
 #ifdef C_PROGRESSIVE_SUPPORTED
+
+#ifdef HAVE_INTRIN_H
+#include <intrin.h>
+#ifdef _MSC_VER
+#ifdef HAVE_JCPHUFF_BITSCANFORWARD64
+#pragma intrinsic(_BitScanForward64)
+#endif
+#ifdef HAVE_JCPHUFF_BITSCANFORWARD
+#pragma intrinsic(_BitScanForward)
+#endif
+#endif
+#endif
+
+#define BLSHIFT(x, shift) x >>= shift
+
+INLINE
+METHODDEF(int)
+jsimd_cblz(size_t *x)
+{
+  int result;
+#if defined(HAVE_JCPHUFF_BUILTIN_CTZL)
+  result = __builtin_ctzl(*x);
+  BLSHIFT(*x, result);
+#elif defined(HAVE_JCPHUFF_BITSCANFORWARD64)
+  _BitScanForward64(&result, *x);
+  BLSHIFT(*x, result);
+#elif defined(HAVE_JCPHUFF_BITSCANFORWARD)
+  _BitScanForward(&result, *x);
+  BLSHIFT(*x, result);
+#else
+  result = 0;
+  while ((*x & 1) == 0) {
+    ++result;
+    BLSHIFT(*x, 1);
+  }
+#endif
+  return result;
+}
+
+/* function pointer type defintion for data preparation (AC) */
+typedef int (* phuff_prepare_fn) (const JCOEF *block,
+                                  const int *jpeg_natural_order_start,
+                                  int len, int Al, JCOEF *absvalues,
+                                  size_t *bitsarray);
 
 /* Expanded entropy encoder object for progressive Huffman encoding. */
 
@@ -29,6 +76,9 @@ typedef struct {
 
   /* Mode flag: TRUE for optimization, FALSE for actual data output */
   boolean gather_statistics;
+ 
+  /* Data preparation function */
+  phuff_prepare_fn prepare;
 
   /* Bit-level coding status.
    * next_output_byte/free_in_buffer are local copies of cinfo->dest fields.
@@ -88,15 +138,37 @@ typedef phuff_entropy_encoder *phuff_entropy_ptr;
 #define IRIGHT_SHIFT(x,shft)    ((x) >> (shft))
 #endif
 
+/* NOTE: Both GCC and Clang define __GNUC__ */
+#if defined __GNUC__ && (defined __arm__ || defined __aarch64__)
+#if !defined __thumb__ || defined __thumb2__
+#define USE_CLZ_INTRINSIC
+#endif
+#endif
+
+#ifdef USE_CLZ_INTRINSIC
+#define JPEG_NBITS_NONZERO(x) (32 - __builtin_clz(x))
+#define JPEG_NBITS(x) (x ? JPEG_NBITS_NONZERO(x) : 0)
+#else
+#include "jpeg_nbits_table.h"
+#define JPEG_NBITS(x) (jpeg_nbits_table[x])
+#define JPEG_NBITS_NONZERO(x) JPEG_NBITS(x)
+#endif
+
 /* Forward declarations */
-METHODDEF(boolean) encode_mcu_DC_first (j_compress_ptr cinfo,
-                                        JBLOCKROW *MCU_data);
-METHODDEF(boolean) encode_mcu_AC_first (j_compress_ptr cinfo,
-                                        JBLOCKROW *MCU_data);
-METHODDEF(boolean) encode_mcu_DC_refine (j_compress_ptr cinfo,
-                                         JBLOCKROW *MCU_data);
-METHODDEF(boolean) encode_mcu_AC_refine (j_compress_ptr cinfo,
-                                         JBLOCKROW *MCU_data);
+METHODDEF(boolean) encode_mcu_DC_first       (j_compress_ptr cinfo,
+                                              JBLOCKROW *MCU_data);
+METHODDEF(boolean) encode_mcu_AC_first       (j_compress_ptr cinfo,
+                                              JBLOCKROW *MCU_data);
+METHODDEF(boolean) encode_mcu_DC_refine      (j_compress_ptr cinfo,
+                                              JBLOCKROW *MCU_data);
+METHODDEF(boolean) encode_mcu_AC_refine      (j_compress_ptr cinfo,
+                                              JBLOCKROW *MCU_data);
+
+METHODDEF(int) encode_mcu_AC_refine_prepare  (const JCOEF *block,
+                                              const int *jpeg_natural_order_start,
+                                              int len, int Al, JCOEF *absvalues,
+                                              size_t *allbits);
+
 METHODDEF(void) finish_pass_phuff (j_compress_ptr cinfo);
 METHODDEF(void) finish_pass_gather_phuff (j_compress_ptr cinfo);
 
@@ -131,6 +203,10 @@ start_pass_phuff (j_compress_ptr cinfo, boolean gather_statistics)
       entropy->pub.encode_mcu = encode_mcu_DC_refine;
     else {
       entropy->pub.encode_mcu = encode_mcu_AC_refine;
+      if (jsimd_can_encode_mcu_AC_refine_prepare())
+        entropy->prepare = jsimd_encode_mcu_AC_refine_prepare;
+      else
+        entropy->prepare = encode_mcu_AC_refine_prepare;
       /* AC refinement needs a correction bit buffer */
       if (entropy->bit_buffer == NULL)
         entropy->bit_buffer = (char *)
@@ -320,9 +396,7 @@ emit_eobrun (phuff_entropy_ptr entropy)
 
   if (entropy->EOBRUN > 0) {    /* if there is any pending EOBRUN */
     temp = entropy->EOBRUN;
-    nbits = 0;
-    while ((temp >>= 1))
-      nbits++;
+    nbits = JPEG_NBITS_NONZERO(temp) - 1;
     /* safety check: shouldn't happen given limited correction-bit buffer */
     if (nbits > 14)
       ERREXIT(entropy->cinfo, JERR_HUFF_MISSING_CODE);
@@ -465,7 +539,7 @@ METHODDEF(boolean)
 encode_mcu_AC_first (j_compress_ptr cinfo, JBLOCKROW *MCU_data)
 {
   phuff_entropy_ptr entropy = (phuff_entropy_ptr) cinfo->entropy;
-  register int temp, temp2;
+  register int temp, temp2, temp3;
   register int nbits;
   register int r, k;
   int Se = cinfo->Se;
@@ -497,15 +571,22 @@ encode_mcu_AC_first (j_compress_ptr cinfo, JBLOCKROW *MCU_data)
      * in C, we shift after obtaining the absolute value; so the code is
      * interwoven with finding the abs value (temp) and output bits (temp2).
      */
-    if (temp < 0) {
-      temp = -temp;             /* temp is abs value of input */
-      temp >>= Al;              /* apply the point transform */
-      /* For a negative coef, want temp2 = bitwise complement of abs(coef) */
-      temp2 = ~temp;
-    } else {
-      temp >>= Al;              /* apply the point transform */
-      temp2 = temp;
-    }
+    
+    /* This is a well-known technique for obtaining the absolute value without a
+     * branch.  It is derived from an assembly language technique presented in
+     * "How to Optimize for the Pentium Processors", Copyright (c) 1996, 1997 by
+     * Agner Fog.
+     */
+    /* This code assumes we are on a two's complement machine */
+    temp3 = temp >> (CHAR_BIT * sizeof(int) - 1);
+    temp ^= temp3;
+    temp -= temp3;            /* temp is abs value of input */
+
+    temp >>= Al;              /* apply the point transform */
+     
+    /* For a negative coef, want temp2 = bitwise complement of abs(coef) */
+    temp2 = temp ^ temp3;
+ 
     /* Watch out for case that nonzero coef is zero after point transform */
     if (temp == 0) {
       r++;
@@ -522,9 +603,8 @@ encode_mcu_AC_first (j_compress_ptr cinfo, JBLOCKROW *MCU_data)
     }
 
     /* Find the number of bits needed for the magnitude of the coefficient */
-    nbits = 1;                  /* there must be at least one 1 bit */
-    while ((temp >>= 1))
-      nbits++;
+    nbits = JPEG_NBITS_NONZERO(temp);  /* there must be at least one 1 bit */
+
     /* Check for out-of-range coefficient values */
     if (nbits > MAX_COEF_BITS)
       ERREXIT(cinfo, JERR_BAD_DCT_COEF);
@@ -614,20 +694,114 @@ encode_mcu_DC_refine (j_compress_ptr cinfo, JBLOCKROW *MCU_data)
 /*
  * MCU encoding for AC successive approximation refinement scan.
  */
+METHODDEF(int)
+encode_mcu_AC_refine_prepare (const JCOEF *block, const int *jpeg_natural_order_start, int len, int Al, JCOEF *absvalues, size_t *bitsarray)
+{
+  register int k;
+  int EOB = 0;
+  size_t zerobits = 0U;
+  size_t signbits = 0U;
+  int len0 = len;
+ 
+#if SIZEOF_SIZE_T == 4
+  if (len0 > 32) {
+    len0 = 32;
+  }
+#endif
+ 
+  for (k = 0; k < len0; k++) {
+    register int temp, temp2;
+    temp = block[jpeg_natural_order_start[k]];
+    /* We must apply the point transform by Al.  For AC coefficients this
+     * is an integer division with rounding towards 0.  To do this portably
+     * in C, we shift after obtaining the absolute value.
+     */
+    
+    /* This is a well-known technique for obtaining the absolute value without a
+     * branch.  It is derived from an assembly language technique presented in
+     * "How to Optimize for the Pentium Processors", Copyright (c) 1996, 1997 by
+     * Agner Fog.
+     * This code assumes we are on a two's complement machine
+     */
+    temp2 = temp >> (CHAR_BIT * sizeof(int) - 1);
+    temp ^= temp2;
+    temp -= temp2;              /* temp is abs value of input */
+    temp >>= Al;                /* apply the point transform */
+    if (temp != 0) {
+      zerobits |= ((size_t)1U) << k;
+      signbits |= ((size_t)(temp2 + 1)) << k;
+    }
+    absvalues[k] = (JCOEF)temp; /* save abs value for main pass */
+    if (temp == 1)
+      EOB = k;                  /* EOB = index of last newly-nonzero coef */
+  }
+  bitsarray[0] = zerobits;
+#if SIZEOF_SIZE_T == 8
+  bitsarray[1] = signbits;
+#else
+  bitsarray[2] = signbits;
+ 
+  zerobits = 0U;
+  signbits = 0U;
+ 
+  if (len > 32) {
+    len -= 32;
+    jpeg_natural_order_start += 32;
+    absvalues += 32;
+    for (k = 0; k < len; k++) {
+      register int temp, temp2;
+      temp = block[jpeg_natural_order_start[k]];
+      /* We must apply the point transform by Al.  For AC coefficients this
+       * is an integer division with rounding towards 0.  To do this portably
+       * in C, we shift after obtaining the absolute value.
+       */
+    
+      /* This is a well-known technique for obtaining the absolute value without a
+       * branch.  It is derived from an assembly language technique presented in
+       * "How to Optimize for the Pentium Processors", Copyright (c) 1996, 1997 by
+       * Agner Fog.
+       * This code assumes we are on a two's complement machine
+       */
+      temp2 = temp >> (CHAR_BIT * sizeof(int) - 1);
+      temp ^= temp2;
+      temp -= temp2;              /* temp is abs value of input */
+      temp >>= Al;                /* apply the point transform */
+      if (temp != 0) {
+        zerobits |= ((size_t)1U) << k;
+        signbits |= ((size_t)(temp2 + 1)) << k;
+      }
+      absvalues[k] = (JCOEF)temp; /* save abs value for main pass */
+      if (temp == 1)
+        EOB = k + 32;             /* EOB = index of last newly-nonzero coef */
+    }
+  }
+  bitsarray[1] = zerobits;
+  bitsarray[3] = signbits;
+#endif
+  return EOB;
+}
 
 METHODDEF(boolean)
 encode_mcu_AC_refine (j_compress_ptr cinfo, JBLOCKROW *MCU_data)
 {
   phuff_entropy_ptr entropy = (phuff_entropy_ptr) cinfo->entropy;
   register int temp;
-  register int r, k;
-  int EOB;
+  register int r;
   char *BR_buffer;
   unsigned int BR;
-  int Se = cinfo->Se;
+  int Sl = cinfo->Se - cinfo->Ss + 1;
   int Al = cinfo->Al;
-  JBLOCKROW block;
-  int absvalues[DCTSIZE2];
+  JCOEF absvalues_unaligned[DCTSIZE2 + 7];
+  JCOEF *absvalues;
+  const JCOEF *cabsvalue;
+  const JCOEF *EOBPTR;
+  size_t zerobits;
+  size_t signbits;
+#if SIZEOF_SIZE_T == 8
+  size_t bitsarray[2];
+#else
+  size_t bitsarray[4];
+#endif
 
   entropy->next_output_byte = cinfo->dest->next_output_byte;
   entropy->free_in_buffer = cinfo->dest->free_in_buffer;
@@ -636,42 +810,31 @@ encode_mcu_AC_refine (j_compress_ptr cinfo, JBLOCKROW *MCU_data)
   if (cinfo->restart_interval)
     if (entropy->restarts_to_go == 0)
       emit_restart(entropy, entropy->next_restart_num);
+ 
+  /* the underlying SIMD code expect size_t == uintptr_t */
+  cabsvalue = absvalues = (JCOEF*)((size_t)(absvalues_unaligned + 7) & ~(size_t)15);
 
-  /* Encode the MCU data block */
-  block = MCU_data[0];
-
-  /* It is convenient to make a pre-pass to determine the transformed
-   * coefficients' absolute values and the EOB position.
-   */
-  EOB = 0;
-  for (k = cinfo->Ss; k <= Se; k++) {
-    temp = (*block)[jpeg_natural_order[k]];
-    /* We must apply the point transform by Al.  For AC coefficients this
-     * is an integer division with rounding towards 0.  To do this portably
-     * in C, we shift after obtaining the absolute value.
-     */
-    if (temp < 0)
-      temp = -temp;             /* temp is abs value of input */
-    temp >>= Al;                /* apply the point transform */
-    absvalues[k] = temp;        /* save abs value for main pass */
-    if (temp == 1)
-      EOB = k;                  /* EOB = index of last newly-nonzero coef */
-  }
+  EOBPTR = absvalues + entropy->prepare(MCU_data[0][0], jpeg_natural_order + cinfo->Ss, Sl, Al, absvalues, bitsarray);
 
   /* Encode the AC coefficients per section G.1.2.3, fig. G.7 */
 
   r = 0;                        /* r = run length of zeros */
   BR = 0;                       /* BR = count of buffered bits added now */
   BR_buffer = entropy->bit_buffer + entropy->BE; /* Append bits to buffer */
-
-  for (k = cinfo->Ss; k <= Se; k++) {
-    if ((temp = absvalues[k]) == 0) {
-      r++;
-      continue;
-    }
-
+  zerobits = bitsarray[0];
+#if SIZEOF_SIZE_T == 8
+  signbits = bitsarray[1];
+#else
+  signbits = bitsarray[2];
+#endif
+  while (zerobits) {
+    int idx = jsimd_cblz(&zerobits);
+    r += idx;
+    cabsvalue += idx;
+    signbits >>= idx;
+   
     /* Emit any required ZRLs, but not if they can be folded into EOB */
-    while (r > 15 && k <= EOB) {
+    while (r > 15 && (cabsvalue <= EOBPTR)) {
       /* emit any pending EOBRUN and the BE correction bits */
       emit_eobrun(entropy);
       /* Emit ZRL */
@@ -682,6 +845,8 @@ encode_mcu_AC_refine (j_compress_ptr cinfo, JBLOCKROW *MCU_data)
       BR_buffer = entropy->bit_buffer; /* BE bits are gone now */
       BR = 0;
     }
+   
+    temp = *cabsvalue++;
 
     /* If the coef was previously nonzero, it only needs a correction bit.
      * NOTE: a straight translation of the spec's figure G.7 would suggest
@@ -691,6 +856,75 @@ encode_mcu_AC_refine (j_compress_ptr cinfo, JBLOCKROW *MCU_data)
     if (temp > 1) {
       /* The correction bit is the next bit of the absolute value. */
       BR_buffer[BR++] = (char) (temp & 1);
+      signbits >>= 1;
+      BLSHIFT(zerobits, 1);
+      continue;
+    }
+
+    /* Emit any pending EOBRUN and the BE correction bits */
+    emit_eobrun(entropy);
+
+    /* Count/emit Huffman symbol for run length / number of bits */
+    emit_symbol(entropy, entropy->ac_tbl_no, (r << 4) + 1);
+
+    /* Emit output bit for newly-nonzero coef */ 
+    temp = signbits & 1; /* ((*block)[jpeg_natural_order_ss[k]] < 0) ? 0 : 1 */
+    emit_bits(entropy, (unsigned int) temp, 1);
+
+    /* Emit buffered correction bits that must be associated with this code */
+    emit_buffered_bits(entropy, BR_buffer, BR);
+    BR_buffer = entropy->bit_buffer; /* BE bits are gone now */
+    BR = 0;
+    r = 0;                      /* reset zero run length */
+    signbits >>= 1;
+    BLSHIFT(zerobits, 1);
+  }
+ 
+#if SIZEOF_SIZE_T == 4
+  zerobits = bitsarray[1];
+  signbits = bitsarray[3];
+ 
+  if (zerobits) {
+    int diff = ((absvalues + DCTSIZE2/2) - cabsvalue);
+    int idx = jsimd_cblz(&zerobits);
+    signbits >>= idx;
+    idx += diff;
+    r += idx;
+    cabsvalue += idx;
+    goto first_iteration;
+  }
+ 
+  while (zerobits) {
+    int idx = jsimd_cblz(&zerobits);
+    r += idx;
+    cabsvalue += idx;
+    signbits >>= idx;
+first_iteration:
+    /* Emit any required ZRLs, but not if they can be folded into EOB */
+    while (r > 15 && (cabsvalue <= EOBPTR)) {
+      /* emit any pending EOBRUN and the BE correction bits */
+      emit_eobrun(entropy);
+      /* Emit ZRL */
+      emit_symbol(entropy, entropy->ac_tbl_no, 0xF0);
+      r -= 16;
+      /* Emit buffered correction bits that must be associated with ZRL */
+      emit_buffered_bits(entropy, BR_buffer, BR);
+      BR_buffer = entropy->bit_buffer; /* BE bits are gone now */
+      BR = 0;
+    }
+   
+    temp = *cabsvalue++;
+
+    /* If the coef was previously nonzero, it only needs a correction bit.
+     * NOTE: a straight translation of the spec's figure G.7 would suggest
+     * that we also need to test r > 15.  But if r > 15, we can only get here
+     * if k > EOB, which implies that this coefficient is not 1.
+     */
+    if (temp > 1) {
+      /* The correction bit is the next bit of the absolute value. */
+      BR_buffer[BR++] = (char) (temp & 1);
+      signbits >>= 1;
+      BLSHIFT(zerobits, 1);
       continue;
     }
 
@@ -701,7 +935,7 @@ encode_mcu_AC_refine (j_compress_ptr cinfo, JBLOCKROW *MCU_data)
     emit_symbol(entropy, entropy->ac_tbl_no, (r << 4) + 1);
 
     /* Emit output bit for newly-nonzero coef */
-    temp = ((*block)[jpeg_natural_order[k]] < 0) ? 0 : 1;
+    temp = signbits & 1; /* ((*block)[jpeg_natural_order_ss[k]] < 0) ? 0 : 1 */
     emit_bits(entropy, (unsigned int) temp, 1);
 
     /* Emit buffered correction bits that must be associated with this code */
@@ -709,8 +943,12 @@ encode_mcu_AC_refine (j_compress_ptr cinfo, JBLOCKROW *MCU_data)
     BR_buffer = entropy->bit_buffer; /* BE bits are gone now */
     BR = 0;
     r = 0;                      /* reset zero run length */
+    signbits >>= 1;
+    BLSHIFT(zerobits, 1);
   }
+#endif
 
+  r |= (int)((absvalues + Sl) - cabsvalue);
   if (r > 0 || BR > 0) {        /* If there are trailing zeroes, */
     entropy->EOBRUN++;          /* count an EOB */
     entropy->BE += BR;          /* concat my correction bits to older ones */

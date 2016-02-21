@@ -20,6 +20,7 @@
 #include "../jsimd.h"
 #include "../jdct.h"
 #include "../jsimddct.h"
+#include "jconfigint.h"
 #include "jsimd.h"
 
 #include <stdio.h>
@@ -804,6 +805,18 @@ jsimd_huff_encode_one_block (void *state, JOCTET *buffer, JCOEFPTR block,
 GLOBAL(int)
 jsimd_can_encode_mcu_AC_refine_prepare (void)
 {
+  init_simd();
+
+  if (DCTSIZE != 8)
+    return 0;
+  if (sizeof(JCOEF) != 2)
+    return 0;
+  if (SIZEOF_SIZE_T != 8)
+    return 0;
+
+  if (simd_support & JSIMD_ARM_NEON)
+    return 1;
+
   return 0;
 }
 
@@ -813,5 +826,6 @@ jsimd_encode_mcu_AC_refine_prepare(const JCOEF *block,
                                    int Sl, int Al, JCOEF *absvalues,
                                    size_t *bits)
 {
-  return 0;
+  return jsimd_encode_mcu_AC_refine_prepare_neon(block, jpeg_natural_order_ss,
+                                                 Sl, Al, absvalues, bits);
 }

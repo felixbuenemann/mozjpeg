@@ -24,48 +24,47 @@
 ; --------------------------------------------------------------------------
         SECTION SEG_TEXT
         BITS    32
-        
 ; --------------------------------------------------------------------------
 
 %macro LOAD16 0
         pxor    N0, N0
         pxor    N1, N1
-        
+
         mov     T0, INT [LUT +  0*SIZEOF_INT]
         mov     T1, INT [LUT +  8*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 0
         pinsrw  X1, word [BLOCK + T1 * 2], 0
-        
+
         mov     T0, INT [LUT +  1*SIZEOF_INT]
         mov     T1, INT [LUT +  9*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 1
         pinsrw  X1, word [BLOCK + T1 * 2], 1
-        
+
         mov     T0, INT [LUT +  2*SIZEOF_INT]
         mov     T1, INT [LUT + 10*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 2
         pinsrw  X1, word [BLOCK + T1 * 2], 2
-        
+
         mov     T0, INT [LUT +  3*SIZEOF_INT]
         mov     T1, INT [LUT + 11*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 3
         pinsrw  X1, word [BLOCK + T1 * 2], 3
-        
+
         mov     T0, INT [LUT +  4*SIZEOF_INT]
         mov     T1, INT [LUT + 12*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 4
         pinsrw  X1, word [BLOCK + T1 * 2], 4
-        
+
         mov     T0, INT [LUT +  5*SIZEOF_INT]
         mov     T1, INT [LUT + 13*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 5
         pinsrw  X1, word [BLOCK + T1 * 2], 5
-        
+
         mov     T0, INT [LUT +  6*SIZEOF_INT]
         mov     T1, INT [LUT + 14*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 6
         pinsrw  X1, word [BLOCK + T1 * 2], 6
-        
+
         mov     T0, INT [LUT +  7*SIZEOF_INT]
         mov     T1, INT [LUT + 15*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 7
@@ -76,58 +75,58 @@
         pxor    N0, N0
         pxor    N1, N1
         pxor    X1, X1
-        
+
         mov     T0, INT [LUT +  0*SIZEOF_INT]
         mov     T1, INT [LUT +  8*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 0
         pinsrw  X1, word [BLOCK + T1 * 2], 0
-        
+
         mov     T0, INT [LUT +  1*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 1
-        
+
         mov     T0, INT [LUT +  2*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 2
-        
+
         mov     T0, INT [LUT +  3*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 3
-        
+
         mov     T0, INT [LUT +  4*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 4
-        
+
         mov     T0, INT [LUT +  5*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 5
-        
+
         mov     T0, INT [LUT +  6*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 6
-        
+
         mov     T0, INT [LUT +  7*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 7
-        
+
         cmp     LENEND, 2
         jl      %%.ELOAD15
         mov     T1, INT [LUT +  9*SIZEOF_INT]
         pinsrw  X1, word [BLOCK + T1 * 2], 1
-        
+
         cmp     LENEND, 3
         jl      %%.ELOAD15
         mov     T1, INT [LUT + 10*SIZEOF_INT]
         pinsrw  X1, word [BLOCK + T1 * 2], 2
-        
+
         cmp     LENEND, 4
         jl      %%.ELOAD15
         mov     T1, INT [LUT + 11*SIZEOF_INT]
         pinsrw  X1, word [BLOCK + T1 * 2], 3
-        
+
         cmp     LENEND, 5
         jl      %%.ELOAD15
         mov     T1, INT [LUT + 12*SIZEOF_INT]
         pinsrw  X1, word [BLOCK + T1 * 2], 4
-        
+
         cmp     LENEND, 6
         jl      %%.ELOAD15
         mov     T1, INT [LUT + 13*SIZEOF_INT]
         pinsrw  X1, word [BLOCK + T1 * 2], 5
-        
+
         cmp     LENEND, 7
         jl      %%.ELOAD15
         mov     T1, INT [LUT + 14*SIZEOF_INT]
@@ -137,28 +136,28 @@
 
 %macro LOAD8 0
         pxor    N0, N0
-        
+
         mov     T0, INT [LUT +  0*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 0
-        
+
         mov     T0, INT [LUT +  1*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 1
-        
+
         mov     T0, INT [LUT +  2*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 2
-        
+
         mov     T0, INT [LUT +  3*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 3
-        
+
         mov     T0, INT [LUT +  4*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 4
-        
+
         mov     T0, INT [LUT +  5*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 5
-        
+
         mov     T0, INT [LUT +  6*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 6
-        
+
         mov     T0, INT [LUT +  7*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T0 * 2], 7
 %endmacro
@@ -166,35 +165,35 @@
 %macro LOAD7 0
         pxor    N0, N0
         pxor    X0, X0
-        
+
         mov     T1, INT [LUT +  0*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T1 * 2], 0
-        
+
         cmp     LENEND, 2
         jl      %%.ELOAD7
         mov     T1, INT [LUT +  1*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T1 * 2], 1
-        
+
         cmp     LENEND, 3
         jl      %%.ELOAD7
         mov     T1, INT [LUT +  2*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T1 * 2], 2
-        
+
         cmp     LENEND, 4
         jl      %%.ELOAD7
         mov     T1, INT [LUT +  3*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T1 * 2], 3
-        
+
         cmp     LENEND, 5
         jl      %%.ELOAD7
         mov     T1, INT [LUT +  4*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T1 * 2], 4
-        
+
         cmp     LENEND, 6
         jl      %%.ELOAD7
         mov     T1, INT [LUT +  5*SIZEOF_INT]
         pinsrw  X0, word [BLOCK + T1 * 2], 5
-        
+
         cmp     LENEND, 7
         jl      %%.ELOAD7
         mov     T1, INT [LUT +  6*SIZEOF_INT]
@@ -210,7 +209,7 @@
         movdqa  xmm4, XMMWORD [VALUES + (32*2)]
         movdqa  xmm5, XMMWORD [VALUES + (40*2)]
         movdqa  xmm6, XMMWORD [VALUES + (48*2)]
-        
+
         pcmpeqw xmm0, ZERO
         pcmpeqw xmm1, ZERO
         pcmpeqw xmm2, ZERO
@@ -219,28 +218,28 @@
         pcmpeqw xmm5, ZERO
         pcmpeqw xmm6, ZERO
         pcmpeqw xmm7, XMMWORD [VALUES + (56*2)]
-    
+
         packsswb xmm0, xmm1
         packsswb xmm2, xmm3
         packsswb xmm4, xmm5
         packsswb xmm6, xmm7
-    
+
         pmovmskb eax, xmm0
         pmovmskb ecx, xmm2
         pmovmskb edx, xmm4
         pmovmskb esi, xmm6
-        
+
         shl      ecx, 16
         shl      esi, 16
-        
+
         or       eax, ecx
         or       edx, esi
-        
+
         not      eax
         not      edx
-        
+
         mov      edi, ZEROBITS
-        
+
         mov      INT [edi], eax
         mov      INT [edi+SIZEOF_INT], edx
 %endmacro
@@ -297,7 +296,6 @@ EXTN(jsimd_encode_mcu_AC_refine_prepare_sse2):
         push    esi
         push    edi
         push    ebp
-        
 
         pcmpeqw ONE, ONE
         psrlw   ONE, 15
@@ -317,7 +315,7 @@ EXTN(jsimd_encode_mcu_AC_refine_prepare_sse2):
         xor     KK, KK
         shr     K, 4
         jz      .ELOOPR16
-        
+
 .BLOOPR16:
         LOAD16
         pcmpgtw N0, X0
@@ -340,7 +338,7 @@ EXTN(jsimd_encode_mcu_AC_refine_prepare_sse2):
         mov     word [T1 + 2 * SIZEOF_INT + KK], T0w
         pmovmskb T1, X0 ; idx = _mm_movemask_epi8(x1);
         bsr     T1, T1 ;  idx = 16 - (__builtin_clz(idx)>>1);
-        jz      .CONTINUER16 ; if (idx) { 
+        jz      .CONTINUER16 ; if (idx) {
         lea     T1, [T1+KK*8]
         mov     EOB, T1 ; EOB = k + idx;
 .CONTINUER16:
@@ -351,18 +349,18 @@ EXTN(jsimd_encode_mcu_AC_refine_prepare_sse2):
         jnz     .BLOOPR16
 .ELOOPR16:
         mov LENEND, LEN
-        
+
         test    LENEND, 8
         jz      .TRYR7
         test    LENEND, 7
         jz      .TRYR8
-        
+
         and     LENEND, 7
         LOAD15
         pcmpgtw N0, X0
         pcmpgtw N1, X1
         paddw   X0, N0
-        paddw   X1, N1      
+        paddw   X1, N1
         pxor    X0, N0
         pxor    X1, N1
         psrlw   X0, AL
@@ -383,11 +381,10 @@ EXTN(jsimd_encode_mcu_AC_refine_prepare_sse2):
         lea     T1, [T1+KK*8]
         mov     EOB, T1 ; EOB = k + idx;
 .CONTINUER15:
-        add     VALUES, 16*2        
-        jmp     .PADDINGR    
+        add     VALUES, 16*2
+        jmp     .PADDINGR
 .TRYR8:
         LOAD8
-        
         pcmpgtw N0, X0
         paddw   X0, N0
         pxor    X0, N0
@@ -409,9 +406,10 @@ EXTN(jsimd_encode_mcu_AC_refine_prepare_sse2):
         add     VALUES, 8*2
         jmp     .PADDINGR
 .TRYR7:
+        test    LENEND, 7
+        jz      .PADDINGR
         and     LENEND, 7
         LOAD7
-        
         pcmpgtw N0, X0
         paddw   X0, N0
         pxor    X0, N0
@@ -426,7 +424,7 @@ EXTN(jsimd_encode_mcu_AC_refine_prepare_sse2):
         mov     word [T1 + 2 * SIZEOF_INT + KK], T0w
         pmovmskb T1, X0 ; idx = _mm_movemask_epi8(x1);
         bsr     T1, T1 ;  idx = 16 - (__builtin_clz(idx)>>1);
-        jz      .CONTINUER7 ; if (idx) { 
+        jz      .CONTINUER7 ; if (idx) {
         lea     T1, [T1+KK*8]
         mov     EOB, T1 ; EOB = k + idx;
 .CONTINUER7:
@@ -446,11 +444,11 @@ EXTN(jsimd_encode_mcu_AC_refine_prepare_sse2):
         jnz     .ZEROLOOPR
 .EPADDINGR:
         sub     VALUES, DCTSIZE2*2
-        
+
         REDUCE0
-        
+
         mov     eax, EOB
-        
+
         pop     ebp
         pop     edi
         pop     esi
